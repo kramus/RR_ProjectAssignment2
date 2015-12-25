@@ -1,0 +1,292 @@
+---
+title: "Weather Events that Have Been of Greatest Impact to USA; Data from the U.S. 
+National Oceanic and Atmospheric Administration's (NOAA)"
+output:
+  html_document:
+    keep_md: true
+---
+  
+  
+##Introduction 
+
+This is the second project assignment for the Reproducible Research Course.
+
+##Synopsis
+
+This project involves exploring the U.S. National Oceanic and Atmospheric 
+Administration's (NOAA) storm database. We will be using primarily 5 variables:
+  
+- EVTYPE: event type
+- FATALITIES: the number of fatalities corresponding to that event.
+- INJURIES: the number of injuries people corresponding to that event.
+- PROPDMG: the amount of money spent in properties damages.
+- PROPDMGEXP: the prefix of the money spent (properties).
+- CROPDMG: the amount of money spent in crops related damages.
+- CROPDMGEXP: the prefix of the money spent (crops).
+
+First we filtered rows that have as least one value greater than zero in one of 
+the variables aforementioned. After that, used NOAA official event type categories
+to kind of clean up the multiple typos in the variable EVTYPE in order to reduce
+the amount of categories (it had over 900 unique values, when it supposes to have
+48 categories.). Finally, we calculated the total fatalities, injuries people, 
+total amount of money spent in properties and crops, and we proceed to graphs the
+top 5 weather events with the most impact (either economic or population health)
+to the USA.
+
+##Data Processing
+
+First of all, we load the packages required:
+
+```{r packages, warning=FALSE}
+#Load packages
+pack <- c("ggplot2", "dplyr", "gridExtra")
+usePackage <- function(p) {
+        if (!is.element(p, installed.packages()[,1]))
+                install.packages(p, dep = TRUE)
+        require(p, character.only = TRUE)
+}
+sapply(pack, usePackage)
+```
+
+Then we load the dataset:
+
+```{r data, cache=TRUE}
+if(!file.exists(".\\data")) {dir.create(".\\data")}
+fileurl <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+if(!file.exists(".\\data\\NOAA_Data.csv.bz2")) {
+        download.file(fileurl, destfile = ".\\data\\NOAA_Data.csv.bz2")
+}
+
+df <- read.csv(".\\data\\NOAA_Data.csv.bz2", stringsAsFactors = FALSE)
+```
+
+Now, let's take a brief look to the dataset:
+
+```{r exploring}
+head(df)
+names(df)
+str(df)
+```
+Now we subset rows with at least one value of the variables of interest greater
+than 0: 
+
+```{r subset}
+df <- df[which(df$FATALITIES > 0 | df$INJURIES > 0 | df$CROPDMG > 0 | 
+                       df$PROPDMG > 0), ]
+```
+
+After that, we create a dataset with the 48 categories according to 
+[NOAA (page 6)][1]. The dataset with the 48 categories is available [here][2].
+  
+Let's load the data containing the categories:
+
+```{r catData, cache=TRUE}
+fileurl2 <- "https://raw.githubusercontent.com/kramus/RR_ProjectAssignment2/master/event.csv"
+if(!file.exists(".\\data\\event.csv")) {
+        download.file(fileurl2, destfile = ".\\data\\event.csv")
+}
+txt <- read.csv(".\\data\\event.csv", header = F, stringsAsFactors = FALSE)
+#Change categories to upper cases
+txt <- mutate_each(txt, funs(toupper))
+```
+ 
+Now in order to match the event type in the dataset with the official ones,
+according to NOAA, we first need to change couple of values in the 
+variable EVTYPE:
+
+```{r changevalues}
+df$EVTYPE[grep("TSTM WIND", df$EVTYPE)] <- "TROPICAL STORM"
+df$EVTYPE[grep("^THUNDERSTORM", df$EVTYPE)] <- "THUNDERSTORM WIND"
+df$EVTYPE[grep("SEVERE TH", df$EVTYPE)] <- "THUNDERSTORM"
+df$EVTYPE[grep("HURRICANE", df$EVTYPE)] <- "HURRICANE/TYPHOON"
+df$EVTYPE[grep("FLASH FL", df$EVTYPE)] <- "FLASH FLOOD"
+df$EVTYPE[grep("FLOOD", df$EVTYPE)] <- "FLOOD"
+df$EVTYPE[grep("HEAVY R", df$EVTYPE)] <- "HEAVY RAIN"
+df$EVTYPE[grep("^HAIL", df$EVTYPE)] <- "HAIL"
+df$EVTYPE[grep("HIGH W", df$EVTYPE)] <- "HIGH WIND"
+df$EVTYPE[grep("TORNADO", df$EVTYPE)] <- "TORNADO"
+df$EVTYPE[grep("TROPICAL ST", df$EVTYPE)] <- "TROPICAL STORM"
+df$EVTYPE[grep("WILD F", df$EVTYPE)] <- "WILDFIRE"
+df$EVTYPE[grep("WILDF", df$EVTYPE)] <- "WILDFIRE"
+df$EVTYPE[grep("FIRE", df$EVTYPE)] <- "WILDFIRE"
+df$EVTYPE[grep("EXTREME HEAT", df$EVTYPE)] <- "EXCESSIVE HEAT"
+df$EVTYPE[grep("^HEAT", df$EVTYPE)] <- "HEAT"
+df$EVTYPE[grep("WATERSP", df$EVTYPE)] <- "WATERSPOUT"
+df$EVTYPE[grep("HEAVY SN", df$EVTYPE)] <- "HEAVY SNOW"
+df$EVTYPE[grep("SNOW", df$EVTYPE)] <- "WINTER WEATHER"
+df$EVTYPE[grep("COLD", df$EVTYPE)] <- "WINTER WEATHER"
+df$EVTYPE[grep("Cold", df$EVTYPE)] <- "WINTER WEATHER"
+df$EVTYPE[grep("WINTER ST", df$EVTYPE)] <- "WINTER STORM"
+df$EVTYPE[grep("ICE", df$EVTYPE)] <- "ICE STORM"
+df$EVTYPE[grep("^FREEZ", df$EVTYPE)] <- "FROST/FREEZE"
+df$EVTYPE[grep("^FOG", df$EVTYPE)] <- "DENSE FOG"
+```
+
+Now we get the cleaner dataset as follows:
+
+```{r cleandata}
+
+cleandata <- df[df$EVTYPE %in% txt$V1, ]
+```
+
+In order to compare the percent of data excluded due typos or unknown event 
+types: 
+
+```{r typos}
+df2 <- setdiff(df[, c(8, 23:28)], cleandata[, c(8, 23:28)])
+#Percent of excluded rows
+excl <- round(nrow(df2)/nrow(df)*100, digits = 2)
+```
+
+The percent of rows excluded due typos is ` r excl` which is great in my
+opinion. 
+  
+Now that we have pass through data cleaning process, we can proceed to address 
+the questions of interest.
+
+##Results
+
+####Question 1: Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+
+In order to assess the most harmful events with respect to population health, we need to calculate the sum of fatalities and injuries people among event types:
+
+```{r q1}
+
+q1 <- aggregate(cbind(FATALITIES, INJURIES) ~ 
+                        EVTYPE, sum, data = cleandata)
+topfatalities <- q1[order(q1$FATALITIES, decreasing = TRUE), c(1, 2)]
+topfatalities <- topfatalities[1:5, ]
+topinjuries <- q1[order(q1$INJURIES, decreasing = TRUE), c(1, 3)]
+topinjuries <- topinjuries[1:5, ]
+topfatalities
+topinjuries
+```
+
+And the respective graph: 
+
+```{r graph1}
+#Graph 1
+p1 <- ggplot(topfatalities, aes(x = reorder(EVTYPE, -FATALITIES), 
+                                y = FATALITIES))
+p1 <- p1 + geom_bar(stat = "identity", colour  = "red", fill = "chocolate2") +
+        labs(x = "Event Type", y = "Number of Fatalities") +
+        ggtitle(expression(atop("", 
+                                atop("Fatalities", "")))) +
+        theme(axis.title = element_text(face = "bold", size = 14), 
+              axis.text.x = element_text(size = 8, angle = 30, hjust = 1, vjust = 1),
+              plot.title = element_text(face = "bold", size = 20, vjust = 1.5), 
+              legend.position = "none")
+#Graph 2
+p2 <- ggplot(topinjuries, aes(x = reorder(EVTYPE, -INJURIES), 
+                                y = INJURIES))
+p2 <- p2 + geom_bar(stat = "identity", colour  = "red", fill = "burlywood") +
+        labs(x = "Event Type", y = "Number of Injuries") +
+        ggtitle(expression(atop("", 
+                atop("Injuries", "")))) +
+        theme(axis.title = element_text(face = "bold", size = 14), 
+              axis.text.x = element_text(size = 8, angle = 30, hjust = 1, vjust = 1),
+              plot.title = element_text(face = "bold", size = 20, vjust = 1.5), 
+              legend.position = "none")
+
+#Join both graphs
+grid.arrange(p1, p2, ncol=2, 
+             top = "Top 5 Harmful Events Related to Population Health")
+```
+
+We can see that in both fatalities and injured people, the event with the most harmful with respect to population health is tornado.
+
+
+####Question 2: Across the United States, which types of events have the greatest economic consequences?
+
+In order to get the events that have the greatest economic consequences according
+to NOAA dataset, we need to calculate the sum of the amount of money spent in 
+properties and crops damages. First we create a multiplier prefix in order to get
+the real total amount of money:
+
+```{r economic}
+multiprefix <- c("0" = 1, "K" = 1000, "k" = 1000, "M" = 1000000, "m" = 1000000, 
+                 "H" = 100, "h" = 100, "5" = 100000, "6" = 1000000, "4" = 10000, 
+                 "2" = 100, "7" = 10000000, "3" = 1000, "B" = 1000000000,
+                 "b" = 1000000000)
+```
+
+There is an observation with a huge typo. It has a prefix of billions instead of
+millions. The REFNUM is 605943. According to the [California Department of Water Resources][3], "In 2006, flood damage to the City of Napa and surrounding communities 
+totaled approximately $115 million dollars; 1,200 homes and 250 businesses were 
+damaged.". The dataset shows billions instead of millions. So we fix that error 
+as follows:
+
+```{r typo}
+cleandata$PROPDMGEXP[which(cleandata$REFNUM == 605943)] <- "M"
+```
+
+Now let's create the multiplier prefix to calculate variable corresponding to 
+the amount of money in damages:
+
+```{r damages}
+
+multiprefix <- c("0" = 1, "K" = 1000, "k" = 1000, "M" = 1000000, "m" = 1000000, 
+                 "H" = 100, "h" = 100, "5" = 100000, "6" = 1000000, "4" = 10000, 
+                 "2" = 100, "7" = 10000000, "3" = 1000, "B" = 1000000000,
+                 "b" = 1000000000)
+
+#Properties damages
+cleandata$propdamage <- cleandata$PROPDMG * multiprefix[cleandata$PROPDMGEXP]
+
+#Crops damages
+cleandata$cropsdamage <- cleandata$CROPDMG * multiprefix[cleandata$CROPDMGEXP]
+
+#Create data to answer question 2:
+q2 <- aggregate(cbind(propdamage, cropsdamage) ~ 
+                        EVTYPE, sum, data = cleandata)
+
+#Getting top 5 event types with the greatest economic consequences
+toppropdmg <- q2[order(q2$propdamage, decreasing = TRUE), c(1, 2)]
+toppropdmg <- toppropdmg[1:5, ]
+topcropsdmg <- q2[order(q2$cropsdamage, decreasing = TRUE), c(1, 3)]
+topcropsdmg <- topcropsdmg[1:5, ]
+toppropdmg
+topcropsdmg
+```
+
+Finally, let's construct the respective graphs:
+
+```{r graphs2}
+
+#Graph 1
+p11 <- ggplot(toppropdmg, aes(x = reorder(EVTYPE, -propdamage), 
+                                y = propdamage))
+p11 <- p11 + geom_bar(stat = "identity", colour  = "red", fill = "chocolate2") +
+        labs(x = "Event Type", y = "Amount of Money Spent") +
+        ggtitle(expression(atop("", 
+                                atop("Properties Damages", "")))) +
+        theme(axis.title = element_text(face = "bold", size = 14), 
+              axis.text.x = element_text(size = 8, angle = 30, hjust = 1, 
+                                         vjust = 1),
+              plot.title = element_text(face = "bold", size = 20, vjust = 1.5), 
+              legend.position = "none")
+
+#Graph 2
+p22 <- ggplot(topcropsdmg, aes(x = reorder(EVTYPE, -cropsdamage), 
+                              y = cropsdamage))
+p22 <- p22 + geom_bar(stat = "identity", colour  = "red", fill = "burlywood") +
+        labs(x = "Event Type", y = "Amount of Money Spent") +
+        ggtitle(expression(atop("", 
+                                atop("Crops Damages", "")))) +
+        theme(axis.title = element_text(face = "bold", size = 14), 
+              axis.text.x = element_text(size = 8, angle = 30, hjust = 1, 
+                                         vjust = 1),
+              plot.title = element_text(face = "bold", size = 20, vjust = 1.5), 
+              legend.position = "none")
+
+#Join both graphs
+grid.arrange(p11, p22, ncol=2, 
+             top = "Top 5 Expensive Natural Events in the USA")
+```
+
+We can see that for properties and crops damages, the event with the greatest
+economic consequences is hurricane/typhoon and flood respectively. 
+
+[1]: https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf "NOAA (page 6)"
+[2]: https://raw.githubusercontent.com/kramus/RR_ProjectAssignment2/master/event.csv "here"
+[3]: http://www.water.ca.gov/floodsafe/ca-flood-preparedness/fpw-day3.cfm "California Department of Water Resources"
